@@ -1,0 +1,20 @@
+fastapi==0.109.1
+uvicorn==0.27.0
+python-multipart==0.0.6
+pydantic==2.6.1
+
+# NLP & Text Processing
+transformers==4.38.2
+safetensors==0.4.2
+torch
+nltk==3.8.1
+language-tool-python==2.9.4
+symspellpy==6.7.7
+pyspellchecker==0.8.1
+rapidfuzz==3.6.1
+# Google Cloud Vision
+# Additional Utilities
+numpy==1.26.4
+scikit-learn
+requests==2.31.0
+tqdm==4.66.1

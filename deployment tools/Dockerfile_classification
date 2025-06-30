@@ -1,0 +1,23 @@
+FROM python:3.10-slim-buster
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('omw-1.4')"
+
+RUN mkdir -p /app/models
+
+COPY project/models /app/models
+
+COPY project/classification_service.py /app/
+
+EXPOSE 8001
+
+CMD ["uvicorn", "classification_service:app", "--host", "0.0.0.0", "--port", "8001"]
