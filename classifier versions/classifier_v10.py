@@ -16,32 +16,25 @@ import shutil
 import transformers
 import inspect
 from functools import lru_cache
-import time
 
-# For dynamic keyword generation
 import re
 import nltk
 from nltk.corpus import stopwords
 from collections import Counter
 from nltk.stem import WordNetLemmatizer
 
-# For dynamic filename generation
 from datetime import datetime
 
-# NEW: Import EarlyStoppingCallback
 from transformers import EarlyStoppingCallback
-# Import IntervalStrategy
 from transformers.trainer_utils import IntervalStrategy
 
 
-# Download NLTK stopwords if not already downloaded
 try:
     stopwords.words('english')
 except LookupError:
     nltk.download('stopwords')
     print("NLTK 'stopwords' downloaded.")
 
-# Download NLTK resources for lemmatization if not already downloaded
 try:
     nltk.data.find('corpora/wordnet')
 except LookupError:
@@ -53,7 +46,6 @@ except LookupError:
     nltk.download('omw-1.4')
     print("NLTK 'omw-1.4' downloaded.")
 
-# Set a random seed for reproducibility
 def set_seed(seed: int = 42):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -63,18 +55,14 @@ def set_seed(seed: int = 42):
 
 set_seed(42)
 
-# Define common paths for consistency
-MODEL_SAVE_DIR = r"E:\Ahmed Sameh Work\Projects\GAIAthon 25\classification_model\model.2"
+MODEL_SAVE_DIR = r"E:\Ahmed Sameh Work\Projects\GAIAthon 25\classification_model\models"
 DATASET_PATH = r"E:\Ahmed Sameh Work\Projects\GAIAthon 25\classification_model\datasets\dataset.json"
 CHEMISTRY_DATA_PATH = r"E:\Ahmed Sameh Work\Projects\GAIAthon 25\classification_model\datasets\chemistry.csv"
 COMPUTER_SCIENCE_DATA_PATH = r"E:\Ahmed Sameh Work\Projects\GAIAthon 25\classification_model\datasets\Computer Science.csv"
 NEW_SAMPLES_DIR = r"E:\Ahmed Sameh Work\Projects\GAIAthon 25\classification_model\new_samples"
 
-# ========== STEP 2: LOAD AND PREPARE DATA ==========
-
-@lru_cache(maxsize=None) # Memoize this function
+@lru_cache(maxsize=None)
 def load_data_from_file(file_path: str):
-    """Loads data from a JSON or CSV file into a Pandas DataFrame."""
     if not os.path.exists(file_path):
         print(f"Warning: File not found at: {file_path}. Returning empty DataFrame.")
         return pd.DataFrame(columns=['text', 'label'])
@@ -84,25 +72,21 @@ def load_data_from_file(file_path: str):
         if ext.lower() == '.json':
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            # Ensure data is in the correct format (list of dicts)
             if isinstance(data, dict):
-                # If it's a single dictionary that looks like a record
                 if 'text' in data and 'label' in data:
                     df = pd.DataFrame([data])
-                else: # Assume it's a dict where keys are texts and values are labels
+                else:
                     df = pd.DataFrame(data.items(), columns=['text', 'label'])
-            else: # Assume it's a list of dictionaries
+            else:
                 df = pd.DataFrame(data)
         elif ext.lower() == '.csv':
             df = pd.read_csv(file_path)
-            # Ensure columns are properly named
             if 'Text' in df.columns and 'Label' in df.columns:
                 df = df.rename(columns={'Text': 'text', 'Label': 'label'})
         else:
             print(f"Unsupported file format: {ext}. Only .json and .csv are supported.")
             return pd.DataFrame(columns=['text', 'label'])
         
-        # Validate required columns exist
         if 'text' not in df.columns or 'label' not in df.columns:
             print(f"Error: Required columns 'text' and 'label' not found in {file_path}.")
             print(f"Actual columns: {df.columns.tolist()}")
@@ -114,7 +98,6 @@ def load_data_from_file(file_path: str):
         return pd.DataFrame(columns=['text', 'label'])
 
 def load_local_dataset(dataset_path: str):
-    """Loads the dataset from a JSON file (or an empty DataFrame if not found)."""
     df = load_data_from_file(dataset_path)
     print(f"Loaded local dataset with {len(df)} samples from {dataset_path}.")
     if not df.empty:
@@ -123,11 +106,9 @@ def load_local_dataset(dataset_path: str):
 
 @lru_cache(maxsize=1)
 def load_additional_huggingface_datasets():
-    """Loads and preprocesses Hugging Face datasets with proper error handling and broader engineering coverage."""
     print("\n--- Loading additional Hugging Face datasets ---")
     all_hf_data = []
 
-    # 1. Mathematics: math_qa
     try:
         print("Loading math_qa dataset...")
         math_dataset = load_dataset("math_qa", trust_remote_code=True)
@@ -145,7 +126,6 @@ def load_additional_huggingface_datasets():
     except Exception as e:
         print(f"  Error loading math_qa: {str(e)}")
 
-    # 2. English: boolq, squad
     try:
         print("Loading boolq dataset for English (maximum samples)...")
         boolq_dataset = load_dataset("boolq", split="train")
@@ -172,7 +152,6 @@ def load_additional_huggingface_datasets():
     except Exception as e:
         print(f"  Error loading squad: {str(e)}")
 
-    # 3. Biology: pubmed_qa and filtered SciQ
     try:
         print("Loading pubmed_qa dataset (maximum samples)...")
         pubmed_dataset = load_dataset("pubmed_qa", "pqa_labeled", split="train")
@@ -202,7 +181,6 @@ def load_additional_huggingface_datasets():
     except Exception as e:
         print(f"  Error loading SciQ for Biology: {str(e)}")
 
-    # 4. Physics: ai2_arc, mmlu (high_school_physics, college_physics), openbookqa, filtered SciQ
     try:
         print("Loading ai2_arc dataset (maximum samples)...")
         arc_dataset = load_dataset("ai2_arc", "ARC-Challenge", split="train")
@@ -297,7 +275,6 @@ def load_additional_huggingface_datasets():
     except Exception as e:
         print(f"  Error loading SciQ for Physics: {str(e)}")
 
-    # 5. Computer Science: mmlu (high_school_computer_science, college_computer_science), SciQ
     try:
         print("Loading mmlu high_school_computer_science dataset (combining all splits: test, validation, dev)...")
         hs_cs_datasets = []
@@ -381,7 +358,6 @@ def load_additional_huggingface_datasets():
     except Exception as e:
         print(f"  Error loading SciQ for Computer Science: {str(e)}")
 
-    # Chemistry: SciQ (filtered)
     try:
         print("Loading SciQ dataset for Chemistry...")
         sciq_chem_dataset = load_dataset("sciq", split="train")
@@ -424,11 +400,10 @@ def load_additional_huggingface_datasets():
                 all_hf_data.append(combined_engineering_df)
                 print(f"  Loaded {len(combined_engineering_df)} samples for {subject_label} (mmlu {subject_key} from all splits).")
             else:
-                print("  No splits loaded for mmlu {subject_key}. Skipping.")
+                print(f"  No splits loaded for mmlu {subject_key}. Skipping.")
         except Exception as e:
             print(f"  Overall error loading mmlu {subject_key}: {str(e)}")
 
-    # NEW ADDITIONS for Mechanical, Civil, Industrial Engineering
     try:
         print("Loading lamm-mit/MechanicsMaterials dataset for Mechanical Engineering...")
         mech_mat_dataset = load_dataset("lamm-mit/MechanicsMaterials", split="train")
@@ -475,7 +450,6 @@ def load_additional_huggingface_datasets():
     print("No additional datasets loaded - using local data only")
     return pd.DataFrame(columns=['text', 'label'])
 
-# Custom Dataset class
 class SimpleTextDataset(torch.utils.data.Dataset):
     def __init__(self, encodings, labels):
         self.encodings = encodings
@@ -489,7 +463,6 @@ class SimpleTextDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.labels)
 
-# Tokenizer for the primary BERT model (will be loaded again for the fine-tuned model)
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
 def tokenize_function(examples):
@@ -497,74 +470,41 @@ def tokenize_function(examples):
     return tokenized_results
 
 def prepare_dataset(df: pd.DataFrame, max_samples_per_class=None):
-    # Normalize labels to avoid issues like "Chemistry " vs "Chemistry"
-    # This also handles converting potential NaN values to "Nan" string
-    df['label'] = df['label'].astype(str).str.strip().str.title()
-
-    # Drop rows with NaN values in 'text' or 'label'
     original_rows = len(df)
     df.dropna(subset=['text', 'label'], inplace=True)
     if len(df) < original_rows:
         print(f"Dropped {original_rows - len(df)} rows with NaN values in 'text' or 'label'.")
 
-    # Filter out entries where 'text' is empty or too short after stripping whitespace
     initial_row_count = len(df)
     df = df[df['text'].apply(lambda x: isinstance(x, str) and len(x.strip()) >= 10)]
     if len(df) < initial_row_count:
         print(f"Removed {initial_row_count - len(df)} rows with empty or too short 'text' content.")
 
-    # Remove labels with fewer than 2 samples and explicitly filter out 'Nan'
-    label_counts = df['label'].value_counts()
-    
-    # Filter out labels that are literally 'Nan' after stripping/title-casing
-    labels_to_exclude = ['Nan'] 
-    
-    # Identify labels to keep based on count >= 2 AND not being in the exclude list
-    labels_to_keep = [
-        label for label in label_counts[label_counts >= 2].index.tolist() 
-        if label not in labels_to_exclude
-    ]
-
-    df = df[df['label'].isin(labels_to_keep)].copy() # Use .copy() to avoid SettingWithCopyWarning
-    print(f"Filtered dataset: {len(df)} samples remaining after removing labels with <2 samples or 'Nan'.")
-
-    # Convert labels to numerical IDs first, using all labels in the initial df
     label_encoder = LabelEncoder()
-    # Fit on the entire 'label' column BEFORE capping to ensure all labels are known
     label_encoder.fit(df['label']) 
     df['encoded_label'] = label_encoder.transform(df['label'])
     
-    # Optional: Cap samples per class - REVISED LOGIC
     if max_samples_per_class:
-        # Create an empty list to store sampled DataFrames
         sampled_dfs = []
         for label_name, group_df in df.groupby('label'):
             sampled_dfs.append(group_df.sample(min(len(group_df), max_samples_per_class), random_state=42))
         df = pd.concat(sampled_dfs).reset_index(drop=True)
         print(f"Applied soft-capping: Max {max_samples_per_class} samples per class.")
     
-    # Calculate class weights
     class_counts = df['label'].value_counts()
-    # Ensure all original classes are represented in class_weights even if they were capped
-    # This assumes label_encoder.classes_ contains all possible labels
     weights = []
     for cls in label_encoder.classes_:
         count = class_counts.get(cls, 0)
-        # Avoid division by zero. If a class has 0 samples, its weight is 0.
         weights.append(len(df) / (len(label_encoder.classes_) * count) if count > 0 else 0.0)
     
     class_weights_tensor = torch.tensor(weights, dtype=torch.float32)
-    # Rescale if sum is not approximately num_labels (as typically done for weighted loss in PyTorch)
     if class_weights_tensor.sum() > 0:
         class_weights_tensor = class_weights_tensor / class_weights_tensor.sum() * len(label_encoder.classes_)
     
     print("Calculated class weights:", class_weights_tensor)
 
-    # Split data
-    # Ensure 'encoded_label' is used for stratification as it contains the numerical IDs
     train_df, eval_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df['encoded_label'])
 
-    # Ensure 'labels' column is correctly set for HuggingFace Dataset, mapping from 'encoded_label'
     train_dataset = Dataset.from_pandas(train_df).map(
         tokenize_function, batched=True, remove_columns=["__index_level_0__", "text", "label"]
     ).rename_column("encoded_label", "labels")
@@ -573,15 +513,12 @@ def prepare_dataset(df: pd.DataFrame, max_samples_per_class=None):
         tokenize_function, batched=True, remove_columns=["__index_level_0__", "text", "label"]
     ).rename_column("encoded_label", "labels")
 
-    # Set formats for PyTorch
     train_dataset.set_format(type="torch", columns=['input_ids', 'attention_mask', 'labels'])
     eval_dataset.set_format(type="torch", columns=['input_ids', 'attention_mask', 'labels'])
 
     return train_dataset, eval_dataset, label_encoder, df, class_weights_tensor
 
-# ========== STEP 3: TRAIN THE MODEL ==========
 def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3, learning_rate: float = 5e-5, output_dir: str = "./results", class_weights_tensor=None):
-    """Trains a BERT classification model with optional class weighting."""
     print("\nTraining the model...")
 
     model = BertForSequenceClassification.from_pretrained(
@@ -591,12 +528,10 @@ def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3,
         label2id={label: i for i, label in enumerate(label_encoder.classes_)}
     )
 
-    # Move model to GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print(f"Using device: {device}")
 
-    # Define metrics
     metric = evaluate.load("f1") 
 
     def compute_metrics(p):
@@ -608,7 +543,6 @@ def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3,
         recall = recall_score(labels, predictions, average='weighted', zero_division=0)
         return {"f1": f1, "accuracy": accuracy, "precision": precision, "recall": recall}
 
-    # Updated Training arguments with correct parameter names
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=5,
@@ -617,8 +551,8 @@ def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3,
         warmup_steps=500,
         weight_decay=0.01,
         learning_rate=3e-5,
-        eval_strategy="epoch",  # Changed from evaluation_strategy to eval_strategy
-        save_strategy="epoch",  # Changed from save_strategy to match
+        eval_strategy="epoch",
+        save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         greater_is_better=True,
@@ -630,14 +564,12 @@ def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3,
         fp16=True if torch.cuda.is_available() else False,
     )
         
-    # Custom Trainer to apply class weights
     class WeightedTrainer(Trainer):
         def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None): 
             labels = inputs.pop("labels")
             outputs = model(**inputs)
             logits = outputs.get("logits")
             
-            # Ensure class_weights_tensor is on the same device as logits
             if class_weights_tensor is not None:
                 loss_fct = torch.nn.CrossEntropyLoss(weight=class_weights_tensor.to(logits.device))
             else:
@@ -646,7 +578,6 @@ def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3,
             loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
             return (loss, outputs) if return_outputs else loss
         
-    # Initialize Trainer with custom weighted loss and EarlyStoppingCallback
     trainer = WeightedTrainer(
         model=model,
         args=training_args,
@@ -660,10 +591,7 @@ def train_model(train_dataset, eval_dataset, label_encoder, num_epochs: int = 3,
     trainer.train()
     return model, trainer, tokenizer, label_encoder
 
-# ========== STEP 4: PREDICT AND CLASSIFY ==========
-
 def generate_dynamic_keywords_from_dataset(dataset_df, label_encoder):
-    """Generates keywords solely based on dataset content."""
     lemmatizer = WordNetLemmatizer()
     stop_words = set(stopwords.words('english'))
     generic_blacklist = {"explain", "define", "what", "how", "question", "answer", "problem", "solution"}
@@ -673,24 +601,20 @@ def generate_dynamic_keywords_from_dataset(dataset_df, label_encoder):
         subject_texts = dataset_df[dataset_df['encoded_label'] == label_id]['text'].tolist()
         words = re.findall(r'\b[a-z]{2,}\b', " ".join(subject_texts).lower())
         
-        # Apply lemmatization and filter stopwords/blacklist
         filtered_words = [lemmatizer.lemmatize(w) for w in words if w not in stop_words and w not in generic_blacklist]
         word_counts = Counter(filtered_words)
         
-        # Filter common words
         if word_counts:
-            # Take top N words or words above a frequency threshold relative to the most common
             threshold = max(1, int(word_counts.most_common(1)[0][1] * 0.01)) 
             subject_keywords = [w for w, cnt in word_counts.items() if cnt >= threshold]
         else:
             subject_keywords = []
 
-        dynamic_keywords[label_name] = list(set(subject_keywords)) # Remove duplicates
+        dynamic_keywords[label_name] = list(set(subject_keywords))
 
     return dynamic_keywords
 
 def load_multiple_models(label_encoder, device):
-    """Loads multiple pre-trained models for ensembling."""
     print("\n--- Loading additional models for ensembling ---")
     models = {}
     tokenizers = {}
@@ -699,7 +623,6 @@ def load_multiple_models(label_encoder, device):
     id2label = {i: label for i, label in enumerate(label_encoder.classes_)}
     label2id = {label: i for i, label in enumerate(label_encoder.classes_)}
 
-    # SciBERT
     try:
         print("Loading SciBERT...")
         tokenizers["scibert"] = BertTokenizer.from_pretrained('allenai/scibert_scivocab_uncased')
@@ -715,7 +638,6 @@ def load_multiple_models(label_encoder, device):
         models["scibert"] = None
         tokenizers["scibert"] = None
 
-    # RoBERTa
     try:
         print("Loading RoBERTa...")
         tokenizers["roberta"] = RobertaTokenizer.from_pretrained('roberta-base')
@@ -733,14 +655,11 @@ def load_multiple_models(label_encoder, device):
         
     return models, tokenizers
 
-# New function for evaluating a single model
 def evaluate_single_model(model, tokenizer, eval_dataset, device):
-    """Evaluates a single model on the given dataset and returns the weighted F1-score."""
     model.eval()
     all_preds = []
     all_labels = []
 
-    # Create a DataLoader for the evaluation set
     eval_dataloader = torch.utils.data.DataLoader(
         eval_dataset, batch_size=16, shuffle=False,
         collate_fn=DataCollatorWithPadding(tokenizer=tokenizer)
@@ -758,36 +677,29 @@ def evaluate_single_model(model, tokenizer, eval_dataset, device):
             all_preds.extend(predictions.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
     
-    # Compute weighted F1 score
     f1 = f1_score(all_labels, all_preds, average='weighted', zero_division=0)
     return f1
 
 
 def predict(text: str, fine_tuned_model, fine_tuned_tokenizer, label_encoder, dynamic_keywords={}, ensemble_models=None, ensemble_tokenizers=None, ensemble_weights=None):
-    """Hybrid classification: BERT Ensemble primary, Keywords fallback."""
     try:
-        # === Input Validation ===
         text = str(text).strip()
         if not text:
             return "Input cannot be empty"
         if len(text) < 10:
             return "Input too short"
 
-        # === Transformer-Based Ensemble Prediction (Primary) ===
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         combined_probs = None
         
-        # Include the fine-tuned model in the ensemble
         all_models = {"fine_tuned_bert": fine_tuned_model}
         all_tokenizers = {"fine_tuned_bert": fine_tuned_tokenizer}
-        # Add other ensemble models if they were loaded successfully
         if ensemble_models and ensemble_tokenizers:
             for name, model in ensemble_models.items():
                 if model is not None:
                     all_models[name] = model
                     all_tokenizers[name] = ensemble_tokenizers[name]
 
-        # Use dynamically calculated weights if provided, else use a simple default
         if ensemble_weights is None:
             num_active_models = len(all_models)
             if num_active_models == 0:
@@ -796,11 +708,10 @@ def predict(text: str, fine_tuned_model, fine_tuned_tokenizer, label_encoder, dy
                 default_weight = 1.0 / num_active_models
                 ensemble_weights = {name: default_weight for name in all_models.keys()}
         
-        # Only attempt ensemble prediction if there are models and weights
         if all_models and ensemble_weights:
             print(f"Using ensemble with weights: {ensemble_weights}")
             for name, model in all_models.items():
-                if model is None: # Skip if model failed to load
+                if model is None:
                     continue
                 
                 tokenizer_current = all_tokenizers[name]
@@ -809,27 +720,23 @@ def predict(text: str, fine_tuned_model, fine_tuned_tokenizer, label_encoder, dy
                 inputs = {k: v.to(device) for k, v in inputs.items()}
 
                 with torch.no_grad():
-                    model.eval() # Ensure evaluation mode
+                    model.eval()
                     outputs = model(**inputs)
                 
-                # Ensure the number of labels matches across models
                 if outputs.logits.shape[1] != len(label_encoder.classes_):
                     print(f"Warning: Model {name} outputs {outputs.logits.shape[1]} labels, but expected {len(label_encoder.classes_)}. Skipping this model in ensemble.")
                     continue
 
-                probs = torch.softmax(outputs.logits, dim=-1) * ensemble_weights.get(name, 0.0) # Apply weight
+                probs = torch.softmax(outputs.logits, dim=-1) * ensemble_weights.get(name, 0.0)
                 combined_probs = probs if combined_probs is None else combined_probs + probs
             
             if combined_probs is not None:
                 pred_id = torch.argmax(combined_probs, dim=-1).item()
-                # Return ensemble prediction immediately if successful
                 print(f"(Ensemble prediction: {label_encoder.classes_[pred_id]})")
                 return label_encoder.classes_[pred_id]
         
-        # === Keyword Matching (Fallback) ===
         print("Ensemble prediction failed or not available. Falling back to keyword matching.")
         lemmatizer = WordNetLemmatizer()
-        # Ensure only alphanumeric words are processed, and then lemmatized
         processed_text = " ".join(
             [lemmatizer.lemmatize(word) for word in re.findall(r'\b[a-z]{2,}\b', text.lower())]
         )
@@ -840,24 +747,19 @@ def predict(text: str, fine_tuned_model, fine_tuned_tokenizer, label_encoder, dy
                 if keyword in processed_text:
                     keyword_scores[label] += 1
 
-        # Check if there's a strong keyword match
         if keyword_scores and any(score > 0 for score in keyword_scores.values()):
             best_label = max(keyword_scores.items(), key=lambda x: x[1])[0]
-            if keyword_scores[best_label] >= 2:  # Strong keyword match
+            if keyword_scores[best_label] >= 2:
                 print(f"(Keyword fallback match: {best_label})")
                 return best_label
         
-        # If neither works
         return "Classification failed: No confident prediction from ensemble or keywords."
 
     except Exception as e:
         print(f"Prediction error: {e}")
         return "Classification failed"
 
-# ========== STEP 5: SAVE AND LOAD MODEL ==========
-
 def save_model(model, tokenizer, label_encoder, save_path: str):
-    """Saves the fine-tuned model, tokenizer, and label encoder."""
     print(f"\nSaving model to {save_path}...")
     os.makedirs(save_path, exist_ok=True)
     model.save_pretrained(save_path)
@@ -869,7 +771,6 @@ def save_model(model, tokenizer, label_encoder, save_path: str):
     print("Model, tokenizer, and label encoder saved.")
 
 def load_model(load_path: str):
-    """Loads the trained model, tokenizer, and label encoder."""
     print(f"\nLoading model from {load_path}...")
     try:
         tokenizer_loaded = BertTokenizer.from_pretrained(load_path)
@@ -887,54 +788,50 @@ def load_model(load_path: str):
             label2id={label: i for i, label in enumerate(label_encoder_loaded.classes_)}
         )
         
-        # Move model to GPU if available
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_loaded.to(device)
-        model_loaded.eval() # Set to evaluation mode
+        model_loaded.eval()
         print("Model, tokenizer, and label encoder loaded successfully.")
         return model_loaded, tokenizer_loaded, label_encoder_loaded
     except Exception as e:
         print(f"Error loading model: {e}")
         return None, None, None
 
-# NEW HELPER FUNCTION FOR MANAGED DATA COMBINATION
-def combine_and_limit_datasets(local_df, hf_df, english_limit=10000, other_limit=float('inf'), local_priority_for_other=float('inf')):
-    """
-    Combines local and Hugging Face DataFrames with specific sampling limits.
-
-    Args:
-        local_df (pd.DataFrame): DataFrame loaded from local source.
-        hf_df (pd.DataFrame): DataFrame loaded from Hugging Face.
-        english_limit (int): Max samples for 'English' class.
-        other_limit (float('inf')): Max samples for all other classes (total per class).
-        local_priority_for_other (float('inf')): Max samples to take from local_df for 'other' classes
-                                       before supplementing from hf_df.
-    Returns:
-        pd.DataFrame: Combined and sampled DataFrame.
-    """
+def combine_and_limit_datasets(local_df, hf_df, english_limit=2000, other_limit=3000, local_priority_for_other=1500):
     final_df_parts = []
-    # Combine all unique labels from both local and HF datasets
-    all_labels = pd.concat([local_df['label'], hf_df['label']]).astype(str).str.strip().str.title().unique()
+    all_labels = pd.concat([local_df['label'], hf_df['label']]).unique()
 
     for label in all_labels:
-        # Filter samples for the current label from local and HF
-        local_samples = local_df[local_df['label'].astype(str).str.strip().str.title() == label]
-        hf_samples = hf_df[hf_df['label'].astype(str).str.strip().str.title() == label]
-
-        # Combine all samples for the current label and deduplicate based on text
-        combined_for_label = pd.concat([local_samples, hf_samples], ignore_index=True).drop_duplicates(subset=['text'])
+        local_samples = local_df[local_df['label'] == label]
+        hf_samples = hf_df[hf_df['label'] == label]
 
         if label == "English":
-            num_to_sample = min(len(combined_for_label), english_limit)
+            combined_english = pd.concat([local_samples, hf_samples], ignore_index=True).drop_duplicates(subset=['text'])
+            num_to_sample = min(len(combined_english), english_limit)
             if num_to_sample > 0:
-                final_df_parts.append(combined_for_label.sample(n=num_to_sample, random_state=42))
+                final_df_parts.append(combined_english.sample(n=num_to_sample, random_state=42))
             print(f"  Processed '{label}': Sampled {num_to_sample} samples (max {english_limit}).")
         else:
-            # For all other labels, take all combined samples (no specific limit)
-            num_to_sample = len(combined_for_label) # Effectively no limit
-            if num_to_sample > 0:
-                final_df_parts.append(combined_for_label.sample(n=num_to_sample, random_state=42)) # Sample to ensure randomness if desired
-            print(f"  Processed '{label}': Took {num_to_sample} samples (no specific limit).")
+            current_samples_for_label = []
+
+            num_from_local = min(len(local_samples), local_priority_for_other, other_limit)
+            if num_from_local > 0:
+                current_samples_for_label.append(local_samples.sample(n=num_from_local, random_state=42))
+                print(f"  Processed '{label}': Took {num_from_local} from local.")
+
+            remaining_needed = other_limit - num_from_local
+            
+            if remaining_needed > 0:
+                hf_eligible_for_supplement = hf_samples[~hf_samples['text'].isin(local_samples['text'])]
+                num_from_hf = min(len(hf_eligible_for_supplement), remaining_needed)
+                if num_from_hf > 0:
+                    current_samples_for_label.append(hf_eligible_for_supplement.sample(n=num_from_hf, random_state=42))
+                    print(f"  Processed '{label}': Took {num_from_hf} from HF to supplement.")
+            
+            if current_samples_for_label:
+                combined_for_label = pd.concat(current_samples_for_label, ignore_index=True).drop_duplicates(subset=['text'])
+                final_df_parts.append(combined_for_label.sample(min(len(combined_for_label), other_limit), random_state=42))
+                print(f"  Final for '{label}': {len(final_df_parts[-1])} samples (max {other_limit}).")
 
     if final_df_parts:
         return pd.concat(final_df_parts, ignore_index=True)
@@ -945,44 +842,14 @@ def combine_and_limit_datasets(local_df, hf_df, english_limit=10000, other_limit
 def main():
     print("Starting classification model pipeline...")
     
-    # 1. Load Data with debugging
-    print("\n--- Loading local dataset (JSON) ---")
-    local_json_df = load_local_dataset(DATASET_PATH)
-    print(f"Local JSON dataset columns: {local_json_df.columns.tolist()}")
-    if not local_json_df.empty:
-        print(f"Local JSON dataset sample:\n{local_json_df.head()}")
+    print("\n--- Loading local dataset ---")
+    local_df = load_local_dataset(DATASET_PATH)
+    print(f"Local dataset columns: {local_df.columns.tolist()}")
+    if not local_df.empty:
+        print(f"Local dataset sample:\n{local_df.head()}")
     else:
-        print("Local JSON dataset is empty.")
-
-    # Load additional local CSV datasets
-    print("\n--- Loading local dataset (Chemistry CSV) ---")
-    chemistry_csv_df = load_data_from_file(CHEMISTRY_DATA_PATH)
-    print(f"Chemistry CSV dataset columns: {chemistry_csv_df.columns.tolist()}")
-    if not chemistry_csv_df.empty:
-        print(f"Chemistry CSV dataset sample:\n{chemistry_csv_df.head()}")
-    else:
-        print("Chemistry CSV dataset is empty.")
-
-    print("\n--- Loading local dataset (Computer Science CSV) ---")
-    computer_science_csv_df = load_data_from_file(COMPUTER_SCIENCE_DATA_PATH)
-    print(f"Computer Science CSV dataset columns: {computer_science_csv_df.columns.tolist()}")
-    if not computer_science_csv_df.empty:
-        print(f"Computer Science CSV dataset sample:\n{computer_science_csv_df.head()}")
-    else:
-        print("Computer Science CSV dataset is empty.")
-
-    # Combine all local dataframes (JSON and CSVs)
-    all_local_dfs = [local_json_df, chemistry_csv_df, computer_science_csv_df]
-    all_local_df = pd.concat([df for df in all_local_dfs if not df.empty], ignore_index=True)
-    all_local_df.drop_duplicates(subset=['text'], inplace=True) # Deduplicate based on text within local files
-    print(f"\nTotal combined local dataset size: {len(all_local_df)}")
-    print("Combined local dataset label distribution (raw):\n", all_local_df['label'].value_counts())
+        print("Local dataset is empty.")
     
-    # === Normalize Local Labels Before Combining with HF ===
-    # This ensures consistency for labels coming from different local files
-    all_local_df['label'] = all_local_df['label'].astype(str).str.strip().str.title()
-    print("Combined local dataset label distribution (normalized):\n", all_local_df['label'].value_counts())
-
     print("\n--- Loading HuggingFace datasets ---")
     hf_df = load_additional_huggingface_datasets()
     print(f"HF dataset columns: {hf_df.columns.tolist() if not hf_df.empty else 'Empty'}")
@@ -991,14 +858,13 @@ def main():
     else:
         print("HuggingFace dataset is empty.")
         
-    # Combine datasets with specific sampling logic (all local + all HF, English capped at 10k)
     print("\n--- Combining and limiting datasets based on requirements ---")
     combined_df = combine_and_limit_datasets(
-        all_local_df, # Use the combined and normalized local dataframe here
+        local_df, 
         hf_df, 
-        english_limit=10000, 
-        other_limit=float('inf'), # No effective limit for other labels
-        local_priority_for_other=float('inf') # No effective limit for local priority
+        english_limit=2000, 
+        other_limit=3000, 
+        local_priority_for_other=1500
     )
     
     if combined_df.empty:
@@ -1007,19 +873,9 @@ def main():
 
     print(f"\nFinal combined dataset size: {len(combined_df)}")
     print("Final combined dataset columns:", combined_df.columns.tolist())
-    
-    # === Normalize Labels to Remove Inconsistencies for the final combined_df ===
-    # This is redundant if already done in combine_and_limit_datasets for combined_for_label,
-    # but good to have as a final safeguard before preparing the dataset for training.
-    combined_df['label'] = combined_df['label'].astype(str).str.strip().str.title()
-    
-    # Show the cleaned label distribution
-    print("\n--- Label counts for all combined and processed datasets ---")
-    print(combined_df['label'].value_counts())
+    print("Final combined dataset label distribution:\n", combined_df['label'].value_counts())
 
-    # 2. Prepare Dataset
     try:
-        # Pass None to max_samples_per_class in prepare_dataset, as we handled capping in combine_and_limit_datasets
         train_dataset, eval_dataset, label_encoder, processed_df, class_weights_tensor = prepare_dataset(
             combined_df, max_samples_per_class=None 
         )
@@ -1029,63 +885,52 @@ def main():
         print("combined_df sample:\n", combined_df.head())
         return
 
-    # Generate dynamic keywords
     dynamic_keywords = generate_dynamic_keywords_from_dataset(processed_df, label_encoder)
     print("\nGenerated dynamic keywords (sample for 'Computer Science'):")
     print(dynamic_keywords.get('Computer Science', [])[:10])
 
-    # 3. Train Model
     current_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_output_dir = os.path.join(MODEL_SAVE_DIR, f"bert_classifier_{current_time_str}")
     
-    # Train the primary BERT model
     model, trainer, tokenizer_trained, label_encoder_trained = train_model(
-        train_dataset, eval_dataset, label_encoder, num_epochs=3, learning_rate=5e-5, # These parameters are overridden by training_args
+        train_dataset, eval_dataset, label_encoder, num_epochs=3, learning_rate=5e-5,
         output_dir=model_output_dir, class_weights_tensor=class_weights_tensor
     )
 
-    # 4. Save Model (the fine-tuned BERT model)
     if model and tokenizer_trained and label_encoder_trained:
         save_model(model, tokenizer_trained, label_encoder_trained, model_output_dir)
     
-    # 5. Load Model for inference (fine-tuned BERT)
     model_loaded, tokenizer_loaded, label_encoder_loaded = load_model(model_output_dir)
 
     if model_loaded is None:
         print("Failed to load fine-tuned model for inference. Exiting.")
         return
 
-    # Load additional models for ensembling
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ensemble_models, ensemble_tokenizers = load_multiple_models(label_encoder_loaded, device)
     
-    # Dynamic Ensemble Weight Calculation
     print("\n--- Calculating dynamic ensemble weights ---")
     model_performance = {}
     
-    # Evaluate fine-tuned BERT
     if model_loaded:
         print(f"Evaluating fine-tuned BERT...")
         f1_bert = evaluate_single_model(model_loaded, tokenizer_loaded, eval_dataset, device)
         model_performance["fine_tuned_bert"] = f1_bert
         print(f"  Fine-tuned BERT F1-score: {f1_bert:.4f}")
 
-    # Evaluate other ensemble models
     for name, ensemble_model in ensemble_models.items():
-        if ensemble_model: # Only evaluate if model loaded successfully
+        if ensemble_model:
             print(f"Evaluating {name}...")
             f1_score_ensemble = evaluate_single_model(ensemble_model, ensemble_tokenizers[name], eval_dataset, device)
             model_performance[name] = f1_score_ensemble
             print(f"  {name} F1-score: {f1_score_ensemble:.4f}")
 
-    # Calculate normalized weights
     total_f1 = sum(model_performance.values())
     ensemble_weights = {}
     if total_f1 > 0:
         for model_name, f1_score_val in model_performance.items():
             ensemble_weights[model_name] = f1_score_val / total_f1
     else:
-        # Fallback to equal weights if all F1 scores are zero (e.g., in a very small eval set or poor training)
         print("Warning: Total F1-score is zero, falling back to equal weights for ensemble.")
         num_active_models = len(model_performance)
         if num_active_models > 0:
@@ -1097,14 +942,12 @@ def main():
 
     print(f"\nDynamically calculated ensemble weights: {ensemble_weights}")
 
-    # 6. Interactive Classification
     print("\n--- Enter text or file path for classification (type 'exit' to quit) ---")
     while True:
         user_input = input("Input: ").strip()
         if user_input.lower() == 'exit':
             break
 
-        start_time = time.time()
         if os.path.exists(user_input):
             print(f"\n--- Classifying content from file: '{user_input}' ---")
             try:
@@ -1141,8 +984,6 @@ def main():
                 ensemble_weights
             )
             print(f"-> Classified Text Input as: {classified_label}")
-        end_time = time.time()
-        print(f"Classification took {end_time - start_time:.4f} seconds.")
 
 if __name__ == "__main__":
     main()
